@@ -1,0 +1,22 @@
+# C / C++ build artifacts
+*.o
+*.obj
+*.out
+*.exe
+build/
+lunar_lander
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Temporary simulation data (keep results/ tracked)
+*.tmp.csv
+test_*.csv
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
