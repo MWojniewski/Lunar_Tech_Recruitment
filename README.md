@@ -13,7 +13,7 @@ In the baseline 1D model, a spacecraft of mass $m$ starts at altitude $H_0$ with
 * Engine thrust: $F_c = 4500\text{ N}$
 * Lunar gravity: $g = 1.6\text{ m/s}^2$
 
-### Suicide Burn Derivation
+### Critical Altitude Calculation
 With the engine active (`ON`), the upward thrust acceleration is $a_c = \frac{F_c}{m} = 2.25\text{ m/s}^2$, yielding a deceleration of:
 $$a_{\text{net}} = a_c - g = 2.25 - 1.60 = 0.65\text{ m/s}^2$$
 
@@ -52,6 +52,36 @@ Run with extended CLI flags:
 ```bash
 ./lunar_lander --output results/fault_test.csv --pilot analytic --fault-prob 0.05 --dt 0.01
 ```
+
+### Plot telemetry
+
+For WSL, create the project virtual environment once:
+```bash
+sudo apt update
+sudo apt install python3-venv
+./scripts/setup_venv.sh
+source .venv/bin/activate
+```
+
+The setup script is safe to run again; it reuses the existing environment and
+ensures the dependencies from `requirements.txt` are installed. After
+activation, use `python` and `make plot` normally:
+```bash
+python --version
+make plot
+```
+
+Generate a PNG beside a telemetry CSV:
+```bash
+python scripts/plot_results.py results/baseline.csv
+```
+
+The plot includes altitude, downward velocity, engine state, touchdown status,
+and (when the CSV contains the 2D columns) horizontal position and velocity.
+Use `--show` to open an interactive window when running with WSLg or another
+GUI display, or `--output path/to/plot.png` to choose the output path. WSL1 is
+headless, so it can save plots but cannot display them interactively. The
+equivalent Make target is `make plot`.
 
 ## 4. Roadmap
 - Baseline 1D physics model and CSV telemetry logger
