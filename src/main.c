@@ -1,4 +1,5 @@
 #include "lander.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,7 +10,7 @@ static void print_usage(const char *prog_name) {
     printf("Options:\n");
     printf("  --output <file>       Output CSV path (default: results/baseline.csv)\n");
     printf("  --pilot <type>        analytic | hysteresis | neural | manual\n");
-    printf("  --fault-prob <0..1>   Engine ignition failure probability (default: 0.0)\n");
+    printf("  --fault-prob <0..1>   Engine ignition failure probability (default: 0.05)\n");
     printf("  --mode-2d             Enable 2D horizontal dynamics\n");
     printf("  --help                Show this help message\n");
 }
@@ -22,7 +23,14 @@ static bool parse_args(int argc, char **argv, SimConfig *cfg) {
         } else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
             cfg->csv_filename = argv[++i];
         } else if (strcmp(argv[i], "--fault-prob") == 0 && i + 1 < argc) {
-            cfg->fault_prob = atof(argv[++i]);
+            char *end;
+            double probability = strtod(argv[++i], &end);
+            if (*argv[i] == '\0' || *end != '\0' ||
+                !isfinite(probability) || probability < 0.0 || probability > 1.0) {
+                fprintf(stderr, "Invalid fault probability: expected a value in [0.0, 1.0]\n");
+                return false;
+            }
+            cfg->fault_prob = probability;
         } else if (strcmp(argv[i], "--mode-2d") == 0) {
             cfg->enable_2d = true;
         } else if (strcmp(argv[i], "--pilot") == 0 && i + 1 < argc) {
@@ -46,6 +54,9 @@ int main(int argc, char **argv) {
     config_init_default(&cfg);
     if (!parse_args(argc, argv, &cfg)) {
         return 0;
+    }
+    if (!config_load_randomized(&cfg, "config/bounds.cfg")) {
+        return 1;
     }
 
     LanderState state;

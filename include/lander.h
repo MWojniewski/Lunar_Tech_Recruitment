@@ -58,6 +58,7 @@ typedef struct {
 
 /* Configuration & initialization */
 void config_init_default(SimConfig *cfg);
+bool config_load_randomized(SimConfig *cfg, const char *filename);
 void state_init(LanderState *state, const SimConfig *cfg);
 
 /* Core modules */

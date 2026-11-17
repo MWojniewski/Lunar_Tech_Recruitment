@@ -26,6 +26,8 @@ $$H_{\text{burn}} = \frac{v_0^2 + 2 g H_0}{2 a_c}$$
 .
 ├── include/
 │   └── lander.h        # Data structures, configuration, and module interfaces
+├── config/
+│   └── bounds.cfg      # Lower and upper bounds for randomized inputs
 ├── src/
 │   ├── main.c          # CLI argument parser and main simulation loop
 │   ├── physics.c       # Physics integration and hardware fault injection
@@ -48,10 +50,20 @@ Run with default parameters and save telemetry to a CSV file:
 ./lunar_lander results/baseline.csv
 ```
 
+The startup configuration is read from `config/bounds.cfg`. It contains
+inclusive lower and upper bounds for `mass`, `initial_height`,
+`initial_velocity`, and `thrust_force`; one value is sampled from each range
+for every run. Set a lower bound equal to the upper bound to keep an input
+fixed.
+
 Run with extended CLI flags:
 ```bash
 ./lunar_lander --output results/fault_test.csv --pilot analytic --fault-prob 0.05 --dt 0.01
 ```
+
+Engine ignition faults are enabled by default with a constant probability of
+`0.05` (5%). Every engine ON command is checked independently, and
+`engine_state` in the CSV records whether ignition actually occurred.
 
 ### Plot telemetry
 
@@ -88,5 +100,5 @@ equivalent Make target is `make plot`.
 - Python visualization script for $H(t)$ and $V(t)$ plots
 - Stochastic engine ignition fault model (`--fault-prob`)
 - 2D lateral physics extension with RCS thrusters (`--mode-2d`)
-- Pure-C Multi-Layer Perceptron (MLP) Neural Pilot (`--pilot neural`)
+- C Multi-Layer Perceptron Neural Pilot (`--pilot neural`)
 - Mass change due to fuel burning
