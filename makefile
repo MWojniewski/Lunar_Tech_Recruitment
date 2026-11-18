@@ -16,7 +16,7 @@ all: $(TARGET)
 $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-src/%.o: src/%.c include/lander.h
+src/%.o: src/%.c include/*.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 run: $(TARGET)

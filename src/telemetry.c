@@ -11,33 +11,30 @@ FILE *telemetry_open_csv(const SimConfig *cfg) {
         return NULL;
     }
 
-    if (cfg->enable_2d) {
-        fprintf(fp, "time,height,velocity,engine_state,x,vx,rcs_state\n");
-    } else {
-        fprintf(fp, "time,height,velocity,engine_state\n");
-    }
+    fprintf(fp, "time,height,velocity,engine_state\n");
     return fp;
 }
 
-void telemetry_log_csv(FILE *fp, const LanderState *state, const SimConfig *cfg) {
+void telemetry_log_csv(FILE *fp, const LanderState *state) {
     if (!fp) {
         return;
     }
-    if (cfg->enable_2d) {
-        fprintf(fp, "%.4f,%.4f,%.4f,%d,%.4f,%.4f,%d\n",
-                state->time, state->height, state->velocity, state->engine_actual,
-                state->x, state->vx, (int)state->rcs_state);
-    } else {
-        fprintf(fp, "%.4f,%.4f,%.4f,%d\n",
-                state->time, state->height, state->velocity, state->engine_actual);
-    }
+    fprintf(fp, "%.4f,%.4f,%.4f,%d\n",
+            state->time, state->height, state->velocity, state->engine_actual);
 }
 
 void telemetry_print_console(const LanderState *state, const SimConfig *cfg) {
     const char *engine_str = state->engine_actual ? "ON" : "OFF";
-    if (cfg->enable_2d) {
-        printf("H=%.1fm, V=%.1fm/s, X=%.1fm, VX=%.1fm/s, %s\n",
-               state->height, state->velocity, state->x, state->vx, engine_str);
+
+    if (cfg->pilot_type == PILOT_MANUAL) {
+        if (cfg->enable_fuel) {
+            printf("H=%6.1fm | V=%5.1fm/s | Fuel=%5.1fkg | Engine: %s\n",
+                   state->measured_height, state->measured_velocity,
+                   state->fuel, engine_str);
+        } else {
+            printf("H=%6.1fm | V=%5.1fm/s | Engine: %s\n",
+                   state->measured_height, state->measured_velocity, engine_str);
+        }
     } else {
         printf("H=%.1fm, V=%.1fm/s, %s\n",
                state->height, state->velocity, engine_str);
@@ -50,6 +47,12 @@ void telemetry_print_summary(const LanderState *state, const SimConfig *cfg) {
     printf("Elapsed time:       %.2f s\n", state->time);
     printf("Touchdown velocity: %.2f m/s (limit: < %.1f m/s)\n",
            state->velocity, cfg->max_safe_velocity);
+    printf("Engine switches:    %d\n", state->engine_switches);
+    if (cfg->enable_fuel) {
+        printf("Fuel burn rate:     %.2f kg/s\n", cfg->fuel_burn_rate);
+        printf("Remaining fuel:     %.1f / %.1f kg (final mass: %.1f kg)\n",
+               state->fuel, cfg->initial_fuel, state->mass);
+    }
 
     if (vertical_ok) {
         printf("STATUS: SUCCESS! The ship has landed safely.\n");

@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define TWO_PI 6.28318530717958647692
+
 typedef struct {
     double min;
     double max;
@@ -41,6 +43,13 @@ static double random_between(const ValueBounds *bounds) {
            ((double)rand() / (double)RAND_MAX) * (bounds->max - bounds->min);
 }
 
+/* Box-Muller transform for standard normal distribution N(0, 1) */
+static double random_normal(void) {
+    double u1 = ((double)rand() + 1.0) / ((double)RAND_MAX + 2.0);
+    double u2 = ((double)rand() + 1.0) / ((double)RAND_MAX + 2.0);
+    return sqrt(-2.0 * log(u1)) * cos(TWO_PI * u2);
+}
+
 void config_init_default(SimConfig *cfg) {
     cfg->mass = 2000.0;
     cfg->initial_height = 500.0;
@@ -52,12 +61,12 @@ void config_init_default(SimConfig *cfg) {
     cfg->dt = 0.01;
     cfg->print_interval = 0.2; /* 5 times per second */
 
-    cfg->randomize = false;   /* default: no randomization */
-    cfg->fault_prob = 0.0;    /* engine ignition failure probability */
-    cfg->enable_2d = false;    /* 1D vertical model by default */
-    cfg->initial_x = 0.0;
-    cfg->initial_vx = 0.0;
-    cfg->rcs_force = 500.0;
+    cfg->randomize = false;      /* default: no randomization */
+    cfg->fault_prob = 0.0;       /* engine ignition failure probability */
+    cfg->enable_fuel = false;    /* constant mass by default for baseline */
+    cfg->initial_fuel = 300.0;   /* 300 kg propellant */
+    cfg->fuel_burn_rate = 6.0;   /* 6 kg/s mass flow rate at full thrust */
+    cfg->sensor_noise = 0.0;     /* 0.0 = ideal sensors, 1.0 = nominal Gaussian noise */
 
     cfg->pilot_type = PILOT_ANALYTIC;
     cfg->csv_filename = "results/baseline.csv";
@@ -74,6 +83,8 @@ bool config_load_randomized(SimConfig *cfg, const char *filename) {
     ValueBounds height = {0};
     ValueBounds velocity = {0};
     ValueBounds thrust = {0};
+    ValueBounds fuel = {0};
+    ValueBounds burn_rate = {0};
     char line[256];
     unsigned int line_number = 0;
     bool valid = true;
@@ -107,6 +118,10 @@ bool config_load_randomized(SimConfig *cfg, const char *filename) {
             target = &velocity;
         } else if (strcmp(trimmed_name, "thrust_force") == 0) {
             target = &thrust;
+        } else if (strcmp(trimmed_name, "initial_fuel") == 0) {
+            target = &fuel;
+        } else if (strcmp(trimmed_name, "fuel_burn_rate") == 0) {
+            target = &burn_rate;
         } else {
             fprintf(stderr, "Unknown bounds key '%s' at %s:%u\n",
                     trimmed_name, filename, line_number);
@@ -141,6 +156,22 @@ bool config_load_randomized(SimConfig *cfg, const char *filename) {
     cfg->initial_height = random_between(&height);
     cfg->initial_velocity = random_between(&velocity);
     cfg->thrust_force = random_between(&thrust);
+
+    if (fuel.set) {
+        if (fuel.min <= 0.0) {
+            fprintf(stderr, "Bounds key 'initial_fuel' must be > 0\n");
+            return false;
+        }
+        cfg->initial_fuel = random_between(&fuel);
+    }
+    if (burn_rate.set) {
+        if (burn_rate.min <= 0.0) {
+            fprintf(stderr, "Bounds key 'fuel_burn_rate' must be > 0\n");
+            return false;
+        }
+        cfg->fuel_burn_rate = random_between(&burn_rate);
+    }
+
     return true;
 }
 
@@ -148,46 +179,79 @@ void state_init(LanderState *state, const SimConfig *cfg) {
     state->time = 0.0;
     state->height = cfg->initial_height;
     state->velocity = cfg->initial_velocity;
+    state->mass = cfg->mass;
+    state->fuel = cfg->enable_fuel ? cfg->initial_fuel : 0.0;
+
     state->engine_cmd = 0;
     state->engine_actual = 0;
+    state->engine_switches = 0;
 
-    state->x = cfg->initial_x;
-    state->vx = cfg->initial_vx;
-    state->rcs_state = RCS_OFF;
+    state->measured_height = cfg->initial_height;
+    state->measured_velocity = cfg->initial_velocity;
 }
 
 void physics_step(LanderState *state, const SimConfig *cfg) {
-    /* 1. Evaluate stochastic engine fault (if enabled) */
-    if (state->engine_cmd == 1 && cfg->fault_prob > 0.0) {
-        double roll = (double)rand() / (double)RAND_MAX;
-        state->engine_actual = (roll < cfg->fault_prob) ? 0 : 1;
+    /* 1. Engine can fire ONLY if pilot commands ON and fuel is available */
+    bool fuel_available = (!cfg->enable_fuel) || (state->fuel > 0.0);
+
+    if (state->engine_cmd == 1 && fuel_available) {
+        if (cfg->fault_prob > 0.0) {
+            double roll = (double)rand() / (double)RAND_MAX;
+            state->engine_actual = (roll < cfg->fault_prob) ? 0 : 1;
+        } else {
+            state->engine_actual = 1;
+        }
     } else {
-        state->engine_actual = state->engine_cmd;
+        state->engine_actual = 0;
     }
 
-    /* 2. Vertical acceleration (downward is positive: a = g - F_thrust / m) */
-    double thrust_acc = state->engine_actual ? (cfg->thrust_force / cfg->mass) : 0.0;
-    double acc_y = cfg->gravity - thrust_acc;
+    /* 2. Variable mass & thrust acceleration calculation */
+    double thrust_acc = 0.0;
+    if (state->engine_actual == 1) {
+        if (cfg->enable_fuel) {
+            double requested_dm = cfg->fuel_burn_rate * cfg->dt;
+            double actual_dm = (state->fuel < requested_dm) ? state->fuel : requested_dm;
+            double thrust_fraction = actual_dm / requested_dm;
 
-    /* 3. Update vertical velocity and height (exact kinematic integration over dt) */
+            double mid_mass = state->mass - 0.5 * actual_dm;
+            thrust_acc = (cfg->thrust_force * thrust_fraction) / mid_mass;
+
+            state->fuel -= actual_dm;
+            if (state->fuel < 1e-9) {
+                state->fuel = 0.0;
+            }
+            state->mass -= actual_dm;
+        } else {
+            thrust_acc = cfg->thrust_force / state->mass;
+        }
+    }
+
+    /* 3. Vertical kinematics (downward is positive: a = g - a_thrust) */
+    double acc_y = cfg->gravity - thrust_acc;
     double prev_velocity = state->velocity;
     state->velocity += acc_y * cfg->dt;
     double avg_velocity = 0.5 * (prev_velocity + state->velocity);
     state->height -= avg_velocity * cfg->dt;
 
-    /* 4. Optional 2D horizontal physics */
-    if (cfg->enable_2d) {
-        /* TODO : Implement lateral acceleration and wind/angle perturbations */
-        double acc_x = ((int)state->rcs_state * cfg->rcs_force) / cfg->mass;
-        double prev_vx = state->vx;
-        state->vx += acc_x * cfg->dt;
-        state->x += 0.5 * (prev_vx + state->vx) * cfg->dt;
-    }
-
     state->time += cfg->dt;
 
-    /* Clamp height to surface level */
+    /* Clamp true height to surface level */
     if (state->height < 0.0) {
         state->height = 0.0;
+    }
+
+    /* 4. Sensor measurements (with optional Gaussian noise) */
+    if (cfg->sensor_noise > 0.0) {
+        double sigma_h = 1.2 * cfg->sensor_noise;
+        double sigma_v = 0.20 * cfg->sensor_noise;
+
+        state->measured_height = state->height + sigma_h * random_normal();
+        if (state->measured_height < 0.0) {
+            state->measured_height = 0.0;
+        }
+        state->measured_velocity = state->velocity + sigma_v * random_normal();
+    } else {
+        state->measured_height = state->height;
+        state->measured_velocity = state->velocity;
     }
 }

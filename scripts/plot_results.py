@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Plot lunar lander telemetry exported by the C simulation.
+"""Plot 1D lunar lander telemetry exported by the C simulation.
 
-The script deliberately uses Python's CSV module instead of pandas so that the
+The script uses Python's CSV module instead of pandas so that the
 visualization has only one runtime dependency: matplotlib.
 """
 
@@ -30,7 +30,6 @@ except ImportError:
 
 
 REQUIRED_COLUMNS = {"time", "height", "velocity", "engine_state"}
-OPTIONAL_2D_COLUMNS = {"x", "vx", "rcs_state"}
 DEFAULT_SAFE_VELOCITY = 1.0
 
 
@@ -42,18 +41,12 @@ class Telemetry:
     height: list[float]
     velocity: list[float]
     engine_state: list[int]
-    x: list[float] | None = None
-    vx: list[float] | None = None
-
-    @property
-    def is_2d(self) -> bool:
-        return self.x is not None and self.vx is not None
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line options for repeatable, script-friendly usage."""
     parser = argparse.ArgumentParser(
-        description="Plot height, velocity, engine state, and optional 2D telemetry."
+        description="Plot height, velocity, and engine state telemetry."
     )
     parser.add_argument(
         "input",
@@ -96,7 +89,7 @@ def _parse_float(value: str | None, column: str, row_number: int) -> float:
 def _parse_int(value: str, column: str, row_number: int) -> int:
     number = _parse_float(value, column, row_number)
     if number not in (0.0, 1.0):
-        raise ValueError(f"row {row_number}: column '{column}' must be 0 or 1")
+        raise ValueError(f"row {row_number}: column '{column}' must be 0 or 1" )
     return int(number)
 
 
@@ -111,22 +104,10 @@ def load_telemetry(path: Path) -> Telemetry:
                 missing_columns = ", ".join(sorted(missing))
                 raise ValueError(f"missing required column(s): {missing_columns}")
 
-            present_2d_columns = OPTIONAL_2D_COLUMNS.intersection(columns)
-            if present_2d_columns and present_2d_columns != OPTIONAL_2D_COLUMNS:
-                missing_2d_columns = ", ".join(
-                    sorted(OPTIONAL_2D_COLUMNS - present_2d_columns)
-                )
-                raise ValueError(
-                    "incomplete 2D telemetry; missing column(s): "
-                    f"{missing_2d_columns}"
-                )
-            has_2d_columns = present_2d_columns == OPTIONAL_2D_COLUMNS
             time: list[float] = []
             height: list[float] = []
             velocity: list[float] = []
             engine_state: list[int] = []
-            x: list[float] | None = [] if has_2d_columns else None
-            vx: list[float] | None = [] if has_2d_columns else None
 
             for row_number, row in enumerate(reader, start=2):
                 if not any(value and value.strip() for value in row.values()):
@@ -137,9 +118,6 @@ def load_telemetry(path: Path) -> Telemetry:
                 engine_state.append(
                     _parse_int(row["engine_state"], "engine_state", row_number)
                 )
-                if has_2d_columns and x is not None and vx is not None:
-                    x.append(_parse_float(row["x"], "x", row_number))
-                    vx.append(_parse_float(row["vx"], "vx", row_number))
     except FileNotFoundError as error:
         raise ValueError(f"input file does not exist: {path}") from error
     except OSError as error:
@@ -149,7 +127,7 @@ def load_telemetry(path: Path) -> Telemetry:
         raise ValueError("input CSV contains no telemetry rows")
     if any(later <= earlier for earlier, later in zip(time, time[1:])):
         raise ValueError("time values must be strictly increasing")
-    return Telemetry(time, height, velocity, engine_state, x, vx)
+    return Telemetry(time, height, velocity, engine_state)
 
 
 def _plot_engine_state(axis, telemetry: Telemetry) -> None:
@@ -170,12 +148,11 @@ def _touchdown_index(telemetry: Telemetry) -> int:
 
 
 def create_figure(telemetry: Telemetry, safe_velocity: float):
-    """Create a figure while keeping plotting separate from file I/O."""
-    row_count = 2 if telemetry.is_2d else 1
+    """Create a 3-panel vertical landing telemetry figure."""
     figure, axes = plt.subplots(
-        2 + row_count,
+        3,
         1,
-        figsize=(11, 10 if telemetry.is_2d else 8),
+        figsize=(11, 8),
         sharex=True,
         constrained_layout=True,
     )
@@ -204,18 +181,6 @@ def create_figure(telemetry: Telemetry, safe_velocity: float):
     axes[1].grid(alpha=0.25)
 
     _plot_engine_state(axes[2], telemetry)
-    next_axis = 3
-    if telemetry.is_2d and telemetry.x is not None and telemetry.vx is not None:
-        axes[next_axis].plot(telemetry.time, telemetry.x, color="#66a61e", linewidth=1.8)
-        axes[next_axis].axhline(0.0, color="black", linewidth=0.8)
-        axes[next_axis].set_ylabel("Horizontal position [m]")
-        axes[next_axis].grid(alpha=0.25)
-        next_axis += 1
-        axes[next_axis].plot(
-            telemetry.time, telemetry.vx, color="#e6ab02", linewidth=1.8
-        )
-        axes[next_axis].set_ylabel("Horizontal velocity [m/s]")
-        axes[next_axis].grid(alpha=0.25)
 
     for axis in axes:
         axis.axvline(touchdown_time, color="#666666", linestyle=":", linewidth=1.0)

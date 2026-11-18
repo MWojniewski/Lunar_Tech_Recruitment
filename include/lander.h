@@ -8,20 +8,12 @@
 typedef enum {
     PILOT_ANALYTIC,   /* Suicide burn + terminal velocity hold */
     PILOT_HYSTERESIS, /* Reactive velocity controller */
-    PILOT_NEURAL,     /* Pre-trained MLP neural network in C */
     PILOT_MANUAL      /* Interactive keyboard control */
 } PilotType;
 
-/* Lateral RCS thruster command for 2D extension */
-typedef enum {
-    RCS_OFF = 0,
-    RCS_LEFT = -1,
-    RCS_RIGHT = 1
-} RcsState;
-
 /* Simulation configuration and initial parameters */
 typedef struct {
-    double mass;              /* Spacecraft mass [kg] (default: 2000.0) */
+    double mass;              /* Initial total spacecraft mass [kg] (default: 2000.0) */
     double initial_height;    /* Initial altitude H_0 [m] (default: 500.0) */
     double initial_velocity;  /* Initial downward speed v_0 [m/s] (default: 10.0) */
     double thrust_force;      /* Main engine thrust F_c [N] (default: 4500.0) */
@@ -31,13 +23,13 @@ typedef struct {
     double dt;                /* Physics integration time step [s] */
     double print_interval;    /* Console output interval [s] */
 
-    /* Extensions (default to 0 / disabled for baseline compliance) */
+    /* Extensions (disabled by default for baseline compliance) */
     bool randomize;           /* Randomize initial conditions from bounds file */
     double fault_prob;        /* Probability [0.0 - 1.0] of engine ignition failure */
-    bool enable_2d;           /* Enable 2D horizontal motion & RCS thrusters */
-    double initial_x;         /* Initial horizontal offset [m] */
-    double initial_vx;        /* Initial horizontal velocity [m/s] */
-    double rcs_force;         /* Lateral RCS thrust force [N] */
+    bool enable_fuel;         /* Enable variable mass and fuel depletion */
+    double initial_fuel;      /* Initial fuel mass [kg] (default: 300.0) */
+    double fuel_burn_rate;    /* Fuel mass flow rate [kg/s] when ON (default: 6.0) */
+    double sensor_noise;      /* Gaussian noise scale factor (default: 0.0) */
 
     PilotType pilot_type;     /* Selected pilot controller */
     const char *csv_filename; /* Output CSV file path */
@@ -46,15 +38,18 @@ typedef struct {
 /* Instantaneous state of the lunar lander */
 typedef struct {
     double time;              /* Elapsed time [s] */
-    double height;            /* Current altitude H [m] */
-    double velocity;          /* Current downward velocity V [m/s] (V > 0 is down) */
-    int engine_cmd;           /* Pilot command: 0 = OFF, 1 = ON */
-    int engine_actual;        /* Actual engine state after fault check: 0 or 1 */
+    double height;            /* True altitude H [m] */
+    double velocity;          /* True downward velocity V [m/s] (V > 0 is down) */
+    double mass;              /* Current total mass m(t) [kg] */
+    double fuel;              /* Remaining fuel mass [kg] */
 
-    /* 2D extension state variables */
-    double x;                 /* Horizontal position [m] */
-    double vx;                /* Horizontal velocity [m/s] */
-    RcsState rcs_state;       /* Lateral thruster state */
+    int engine_cmd;           /* Pilot command: 0 = OFF, 1 = ON */
+    int engine_actual;        /* Actual engine state after fault & fuel check: 0 or 1 */
+    int engine_switches;      /* Total count of engine command transitions */
+
+    /* Sensor readings (equal to true state when sensor_noise == 0.0) */
+    double measured_height;   /* Altimeter reading with Gaussian noise [m] */
+    double measured_velocity; /* Velocimeter reading with Gaussian noise [m/s] */
 } LanderState;
 
 /* Configuration & initialization */
@@ -63,13 +58,14 @@ bool config_load_randomized(SimConfig *cfg, const char *filename);
 void state_init(LanderState *state, const SimConfig *cfg);
 
 /* Core modules */
+bool pilot_manual_init(void);
+void pilot_manual_cleanup(void);
 int pilot_decide_main_engine(const LanderState *state, const SimConfig *cfg);
-RcsState pilot_decide_rcs(const LanderState *state, const SimConfig *cfg);
 void physics_step(LanderState *state, const SimConfig *cfg);
 
 /* Telemetry & I/O */
 FILE *telemetry_open_csv(const SimConfig *cfg);
-void telemetry_log_csv(FILE *fp, const LanderState *state, const SimConfig *cfg);
+void telemetry_log_csv(FILE *fp, const LanderState *state);
 void telemetry_print_console(const LanderState *state, const SimConfig *cfg);
 void telemetry_print_summary(const LanderState *state, const SimConfig *cfg);
 
