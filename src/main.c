@@ -10,7 +10,8 @@ static void print_usage(const char *prog_name) {
     printf("Options:\n");
     printf("  --output <file>       Output CSV path (default: results/baseline.csv)\n");
     printf("  --pilot <type>        analytic | hysteresis | neural | manual\n");
-    printf("  --fault-prob <0..1>   Engine ignition failure probability (default: 0.05)\n");
+    printf("  --fault-prob <0..1>   Engine ignition failure probability\n");
+    printf("  --randomize           Randomize initial conditions from config/bounds.cfg\n");
     printf("  --mode-2d             Enable 2D horizontal dynamics\n");
     printf("  --help                Show this help message\n");
 }
@@ -39,6 +40,8 @@ static bool parse_args(int argc, char **argv, SimConfig *cfg) {
             else if (strcmp(p, "hysteresis") == 0) cfg->pilot_type = PILOT_HYSTERESIS;
             else if (strcmp(p, "neural") == 0) cfg->pilot_type = PILOT_NEURAL;
             else if (strcmp(p, "manual") == 0) cfg->pilot_type = PILOT_MANUAL;
+        } else if (strcmp(argv[i], "--randomize") == 0) {
+            cfg->randomize = true;
         } else if (argv[i][0] != '-') {
             /* Support direct positional filename argument: ./lunar_lander output.csv */
             cfg->csv_filename = argv[i];
@@ -55,8 +58,10 @@ int main(int argc, char **argv) {
     if (!parse_args(argc, argv, &cfg)) {
         return 0;
     }
-    if (!config_load_randomized(&cfg, "config/bounds.cfg")) {
-        return 1;
+    if (cfg.randomize) {
+        if (!config_load_randomized(&cfg, "config/bounds.cfg")) {
+            return 1;
+        }
     }
 
     LanderState state;

@@ -7,8 +7,8 @@
 /* Pilot controller strategies */
 typedef enum {
     PILOT_ANALYTIC,   /* Suicide burn + terminal velocity hold */
-    PILOT_HYSTERESIS, /* Reactive bang-bang velocity controller */
-    PILOT_NEURAL,     /* Pre-trained MLP neural network in pure C */
+    PILOT_HYSTERESIS, /* Reactive velocity controller */
+    PILOT_NEURAL,     /* Pre-trained MLP neural network in C */
     PILOT_MANUAL      /* Interactive keyboard control */
 } PilotType;
 
@@ -29,9 +29,10 @@ typedef struct {
     double max_safe_velocity; /* Max touchdown velocity [m/s] (default: 1.0) */
 
     double dt;                /* Physics integration time step [s] */
-    double print_interval;    /* Console output interval [s] (several times/sec) */
+    double print_interval;    /* Console output interval [s] */
 
     /* Extensions (default to 0 / disabled for baseline compliance) */
+    bool randomize;           /* Randomize initial conditions from bounds file */
     double fault_prob;        /* Probability [0.0 - 1.0] of engine ignition failure */
     bool enable_2d;           /* Enable 2D horizontal motion & RCS thrusters */
     double initial_x;         /* Initial horizontal offset [m] */

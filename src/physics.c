@@ -52,7 +52,8 @@ void config_init_default(SimConfig *cfg) {
     cfg->dt = 0.01;
     cfg->print_interval = 0.2; /* 5 times per second */
 
-    cfg->fault_prob = 0.001;    /* engine ignition failure probability */
+    cfg->randomize = false;   /* default: no randomization */
+    cfg->fault_prob = 0.0;    /* engine ignition failure probability */
     cfg->enable_2d = false;    /* 1D vertical model by default */
     cfg->initial_x = 0.0;
     cfg->initial_vx = 0.0;
